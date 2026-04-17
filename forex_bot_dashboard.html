@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FX Guardian — Risk-Managed Trading Bot</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:      #080c10;
+    --panel:   #0d1318;
+    --border:  #1a2530;
+    --accent:  #00e5a0;
+    --accent2: #ff4e6a;
+    --warn:    #ffb347;
+    --text:    #c8d8e8;
+    --muted:   #4a6070;
+    --win:     #00e5a0;
+    --loss:    #ff4e6a;
+    --mono:    'Space Mono', monospace;
+    --sans:    'Syne', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Grid noise overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,229,160,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,160,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .everything { position: relative; z-index: 1; }
+
+  /* ── Header ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(13,19,24,0.95);
+    backdrop-filter: blur(12px);
+    position: sticky; top: 0; z-index: 100;
+  }
+
+  .logo {
+    display: flex; align-items: center; gap: 12px;
+  }
+
+  .logo-icon {
+    width: 36px; height: 36px;
+    border: 2px solid var(--accent);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono);
+    font-size: 14px;
+    color: var(--accent);
+    font-weight: 700;
+    box-shadow: 0 0 12px rgba(0,229,160,0.3);
+  }
+
+  .logo-name {
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    color: #fff;
+  }
+
+  .logo-sub {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+
+  .status-bar {
+    display: flex; align-items: center; gap: 20px;
+  }
+
+  .status-dot {
+    display: flex; align-items: center; gap: 6px;
+    font-family: var(--mono); font-size: 11px;
+  }
+
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent);
+    animation: pulse 2s infinite;
+  }
+
+  .dot.halted { background: var(--loss); box-shadow: 0 0 6px var(--loss); animation: none; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .kill-btn {
+    background: transparent;
+    border: 1px solid var(--loss);
+    color: var(--loss);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 6px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    letter-spacing: 0.1em;
+    transition: all 0.2s;
+  }
+  .kill-btn:hover {
+    background: var(--loss);
+    color: #fff;
+    box-shadow: 0 0 16px rgba(255,78,106,0.4);
+  }
+  .kill-btn.active {
+    background: var(--warn);
+    border-color: var(--warn);
+    color: #000;
+  }
+
+  /* ── Main layout ── */
+  .main {
+    padding: 28px 32px;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: auto;
+    gap: 16px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    transition: border-color 0.2s;
+  }
+  .card:hover { border-color: rgba(0,229,160,0.2); }
+
+  .card-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+
+  .card-value {
+    font-family: var(--mono);
+    font-size: 28px;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1;
+  }
+
+  .card-value.green { color: var(--win); }
+  .card-value.red   { color: var(--loss); }
+  .card-value.warn  { color: var(--warn); }
+
+  .card-sub {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+
+  /* ── Spans ── */
+  .span-2 { grid-column: span 2; }
+  .span-3 { grid-column: span 3; }
+  .span-1 { grid-column: span 1; }
+
+  /* ── Risk gauges ── */
+  .gauge-row {
+    display: flex; flex-direction: column; gap: 14px;
+    margin-top: 4px;
+  }
+
+  .gauge-item { width: 100%; }
+
+  .gauge-header {
+    display: flex; justify-content: space-between;
+    font-family: var(--mono); font-size: 11px;
+    margin-bottom: 6px;
+  }
+  .gauge-label { color: var(--muted); }
+  .gauge-val   { color: var(--text); }
+
+  .gauge-track {
+    height: 6px; background: var(--border);
+    border-radius: 3px; overflow: hidden;
+  }
+  .gauge-fill {
+    height: 100%; border-radius: 3px;
+    transition: width 0.6s ease;
+  }
+  .gauge-fill.safe   { background: var(--win); box-shadow: 0 0 6px rgba(0,229,160,0.4); }
+  .gauge-fill.warn   { background: var(--warn); }
+  .gauge-fill.danger { background: var(--loss); box-shadow: 0 0 6px rgba(255,78,106,0.4); }
+
+  /* ── Trade log table ── */
+  .table-wrap {
+    overflow-x: auto;
+    margin-top: 4px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  thead th {
+    color: var(--muted);
+    text-align: left;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  tbody tr {
+    border-bottom: 1px solid rgba(26,37,48,0.5);
+    transition: background 0.15s;
+  }
+  tbody tr:hover { background: rgba(0,229,160,0.03); }
+
+  tbody td {
+    padding: 9px 10px;
+    color: var(--text);
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+  }
+  .badge.buy  { background: rgba(0,229,160,0.15); color: var(--win); }
+  .badge.sell { background: rgba(255,78,106,0.15); color: var(--loss); }
+  .badge.win  { background: rgba(0,229,160,0.15); color: var(--win); }
+  .badge.loss { background: rgba(255,78,106,0.15); color: var(--loss); }
+  .badge.tp   { background: rgba(0,229,160,0.1); color: var(--win); }
+  .badge.sl   { background: rgba(255,78,106,0.1); color: var(--loss); }
+
+  .pnl-pos { color: var(--win); }
+  .pnl-neg { color: var(--loss); }
+
+  /* ── Equity chart ── */
+  .chart-area {
+    width: 100%;
+    height: 140px;
+    margin-top: 8px;
+    position: relative;
+  }
+
+  canvas { width: 100%; height: 100%; }
+
+  /* ── Signal panel ── */
+  .signal-list {
+    display: flex; flex-direction: column; gap: 10px;
+    margin-top: 4px;
+  }
+
+  .signal-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-family: var(--mono); font-size: 11px;
+  }
+
+  .signal-item.active { border-color: rgba(0,229,160,0.3); }
+
+  .sig-pair { color: #fff; font-weight: 700; font-size: 13px; }
+  .sig-dir.buy  { color: var(--win); }
+  .sig-dir.sell { color: var(--loss); }
+  .sig-info { color: var(--muted); font-size: 10px; margin-top: 2px; }
+
+  .sig-stats {
+    text-align: right;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+
+  /* ── Risk config panel ── */
+  .config-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 8px;
+  }
+
+  .config-item {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+
+  .config-key {
+    font-family: var(--mono); font-size: 10px;
+    color: var(--muted); letter-spacing: 0.1em;
+    text-transform: uppercase; margin-bottom: 4px;
+  }
+
+  .config-val {
+    font-family: var(--mono); font-size: 16px;
+    color: var(--accent); font-weight: 700;
+  }
+
+  /* ── Section titles ── */
+  .section-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 14px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* ── Alert banner ── */
+  .alert {
+    display: none;
+    grid-column: span 3;
+    background: rgba(255,78,106,0.1);
+    border: 1px solid rgba(255,78,106,0.4);
+    border-radius: 8px;
+    padding: 14px 20px;
+    font-family: var(--mono); font-size: 12px;
+    color: var(--loss);
+    align-items: center; gap: 10px;
+  }
+  .alert.show { display: flex; }
+
+  /* ── Anim ── */
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .card { animation: fadeIn 0.4s ease both; }
+  .card:nth-child(1) { animation-delay: 0.05s; }
+  .card:nth-child(2) { animation-delay: 0.10s; }
+  .card:nth-child(3) { animation-delay: 0.15s; }
+  .card:nth-child(4) { animation-delay: 0.20s; }
+  .card:nth-child(5) { animation-delay: 0.25s; }
+  .card:nth-child(6) { animation-delay: 0.30s; }
+  .card:nth-child(7) { animation-delay: 0.35s; }
+  .card:nth-child(8) { animation-delay: 0.40s; }
+
+  .ticker {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    padding: 0 32px 10px;
+    display: flex; gap: 24px;
+    overflow: hidden;
+  }
+  .tick-item { display: flex; gap: 6px; }
+  .tick-sym { color: var(--text); }
+  .tick-up   { color: var(--win); }
+  .tick-dn   { color: var(--loss); }
+</style>
+</head>
+<body>
+<div class="everything">
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">FX</div>
+    <div>
+      <div class="logo-name">FX GUARDIAN</div>
+      <div class="logo-sub">Risk-Managed Forex Bot</div>
+    </div>
+  </div>
+  <div class="status-bar">
+    <div class="status-dot">
+      <div class="dot" id="statusDot"></div>
+      <span id="statusText" style="font-size:11px;">ACTIVE</span>
+    </div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted)" id="clockEl"></div>
+    <button class="kill-btn" id="killBtn" onclick="toggleKill()">⬛ KILL SWITCH</button>
+  </div>
+</header>
+
+<div class="ticker" id="ticker"></div>
+
+<div class="main">
+
+  <!-- Alert banner -->
+  <div class="alert" id="alertBanner">
+    ⚠ &nbsp; <span id="alertMsg"></span>
+  </div>
+
+  <!-- KPI cards row 1 -->
+  <div class="card span-1">
+    <div class="card-label">Account Balance</div>
+    <div class="card-value" id="balanceVal">$10,000.00</div>
+    <div class="card-sub" id="balanceSub">Starting capital</div>
+  </div>
+
+  <div class="card span-1">
+    <div class="card-label">Today's P&L</div>
+    <div class="card-value green" id="dailyPnl">+$0.00</div>
+    <div class="card-sub" id="pnlSub">0 trades today</div>
+  </div>
+
+  <div class="card span-1">
+    <div class="card-label">Win Rate</div>
+    <div class="card-value" id="winRateVal">—</div>
+    <div class="card-sub" id="winRateSub">All-time</div>
+  </div>
+
+  <!-- Equity curve -->
+  <div class="card span-2">
+    <div class="section-title">Equity Curve</div>
+    <div class="chart-area">
+      <canvas id="equityCanvas"></canvas>
+    </div>
+  </div>
+
+  <!-- Risk gauges -->
+  <div class="card span-1">
+    <div class="section-title">Risk Gauges</div>
+    <div class="gauge-row">
+      <div class="gauge-item">
+        <div class="gauge-header">
+          <span class="gauge-label">Daily Loss</span>
+          <span class="gauge-val" id="g1Val">0.0%</span>
+        </div>
+        <div class="gauge-track">
+          <div class="gauge-fill safe" id="g1Fill" style="width:0%"></div>
+        </div>
+      </div>
+      <div class="gauge-item">
+        <div class="gauge-header">
+          <span class="gauge-label">Drawdown</span>
+          <span class="gauge-val" id="g2Val">0.0%</span>
+        </div>
+        <div class="gauge-track">
+          <div class="gauge-fill safe" id="g2Fill" style="width:0%"></div>
+        </div>
+      </div>
+      <div class="gauge-item">
+        <div class="gauge-header">
+          <span class="gauge-label">Trades Today</span>
+          <span class="gauge-val" id="g3Val">0 / 5</span>
+        </div>
+        <div class="gauge-track">
+          <div class="gauge-fill safe" id="g3Fill" style="width:0%"></div>
+        </div>
+      </div>
+      <div class="gauge-item">
+        <div class="gauge-header">
+          <span class="gauge-label">Risk Per Trade</span>
+          <span class="gauge-val">1.0%</span>
+        </div>
+        <div class="gauge-track">
+          <div class="gauge-fill safe" style="width:20%"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Active signals -->
+  <div class="card span-1">
+    <div class="section-title">Active Signals</div>
+    <div class="signal-list" id="signalList">
+      <div style="color:var(--muted);font-family:var(--mono);font-size:11px;padding:8px 0;">
+        Scanning market conditions...
+      </div>
+    </div>
+  </div>
+
+  <!-- Risk config -->
+  <div class="card span-1">
+    <div class="section-title">Risk Config</div>
+    <div class="config-grid">
+      <div class="config-item">
+        <div class="config-key">Risk / Trade</div>
+        <div class="config-val">1.0%</div>
+      </div>
+      <div class="config-item">
+        <div class="config-key">Max Daily Loss</div>
+        <div class="config-val">5.0%</div>
+      </div>
+      <div class="config-item">
+        <div class="config-key">Max Drawdown</div>
+        <div class="config-val">15%</div>
+      </div>
+      <div class="config-item">
+        <div class="config-key">Min R:R Ratio</div>
+        <div class="config-val">1 : 2</div>
+      </div>
+      <div class="config-item">
+        <div class="config-key">Max Spread</div>
+        <div class="config-val">3 pips</div>
+      </div>
+      <div class="config-item">
+        <div class="config-key">Max Daily Trades</div>
+        <div class="config-val">5</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stats row -->
+  <div class="card span-1">
+    <div class="card-label">Total Profit / Loss</div>
+    <div class="card-value green" id="totalPnl">+$0.00</div>
+    <div class="card-sub" id="totalSub">All-time</div>
+  </div>
+
+  <div class="card span-1">
+    <div class="card-label">Profit Factor</div>
+    <div class="card-value" id="pfVal">—</div>
+    <div class="card-sub">Gross profit ÷ gross loss</div>
+  </div>
+
+  <div class="card span-1">
+    <div class="card-label">Max Drawdown</div>
+    <div class="card-value warn" id="ddVal">$0.00</div>
+    <div class="card-sub">Peak-to-trough</div>
+  </div>
+
+  <!-- Trade log -->
+  <div class="card span-3">
+    <div class="section-title">Trade Log</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Symbol</th>
+            <th>Dir</th>
+            <th>Entry</th>
+            <th>Exit</th>
+            <th>SL</th>
+            <th>TP</th>
+            <th>Lots</th>
+            <th>Pips</th>
+            <th>P&L</th>
+            <th>Outcome</th>
+            <th>Reason</th>
+          </tr>
+        </thead>
+        <tbody id="tradeTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div><!-- /main -->
+</div><!-- /everything -->
+
+<script>
+// ── Clock ────────────────────────────────────────────────────────────────
+function updateClock() {
+  const d = new Date();
+  const s = d.toUTCString().replace('GMT','UTC').split(' ').slice(0,5).join(' ');
+  document.getElementById('clockEl').textContent = s;
+}
+setInterval(updateClock, 1000); updateClock();
+
+// ── Simulated state ──────────────────────────────────────────────────────
+const START_BALANCE = 10000;
+let state = {
+  balance: START_BALANCE,
+  equity: START_BALANCE,
+  peakEquity: START_BALANCE,
+  dailyPnl: 0,
+  dailyTrades: 0,
+  totalPnl: 0,
+  wins: 0,
+  losses: 0,
+  grossProfit: 0,
+  grossLoss: 0,
+  maxDD: 0,
+  trades: [],
+  equityCurve: [START_BALANCE],
+  killed: false,
+  halted: false,
+  haltReason: ''
+};
+
+const PAIRS = [
+  { sym:'EUR/USD', base:1.0845, pip:0.0001 },
+  { sym:'GBP/USD', base:1.2690, pip:0.0001 },
+  { sym:'USD/JPY', base:154.23, pip:0.01  },
+  { sym:'AUD/USD', base:0.6432, pip:0.0001 },
+];
+let ticks = PAIRS.map(p => ({ ...p, price: p.base, prev: p.base }));
+
+// ── Ticker ────────────────────────────────────────────────────────────────
+function updateTicker() {
+  ticks.forEach(t => {
+    t.prev = t.price;
+    t.price = +(t.price + (Math.random()-0.5) * t.pip * 4).toFixed(t.pip < 0.001 ? 2 : 5);
+  });
+  const el = document.getElementById('ticker');
+  el.innerHTML = ticks.map(t => {
+    const up = t.price >= t.prev;
+    const arrow = up ? '▲' : '▼';
+    const cls = up ? 'tick-up' : 'tick-dn';
+    return `<span class="tick-item"><span class="tick-sym">${t.sym}</span><span class="${cls}">${arrow} ${t.price.toFixed(t.pip < 0.001 ? 2 : 5)}</span></span>`;
+  }).join('');
+}
+setInterval(updateTicker, 1500); updateTicker();
+
+// ── Simulate trades ───────────────────────────────────────────────────────
+const SYMBOLS = ['EURUSD','GBPUSD','USDJPY'];
+const DIRS    = ['BUY','SELL'];
+let tradeCounter = 0;
+
+function simulateTrade() {
+  if (state.killed || state.halted) return;
+  if (state.dailyTrades >= 5) return;
+  if (Math.random() > 0.3) return; // 30% chance of trade per tick
+
+  const sym  = SYMBOLS[Math.floor(Math.random()*SYMBOLS.length)];
+  const dir  = DIRS[Math.floor(Math.random()*2)];
+  const entry = +(1.0845 + (Math.random()-0.5)*0.02).toFixed(5);
+  const atr   = 0.0012 + Math.random()*0.001;
+  const sl    = dir==='BUY' ? +(entry - atr*1.5).toFixed(5) : +(entry + atr*1.5).toFixed(5);
+  const tp    = dir==='BUY' ? +(entry + atr*3.0).toFixed(5) : +(entry - atr*3.0).toFixed(5);
+  const slPips = Math.round(atr*1.5/0.0001);
+  const lots   = +(100 / (slPips * 10)).toFixed(2);
+
+  // Win/loss random with slight edge
+  const won = Math.random() < 0.48;
+  const exitPrice = won ? tp : sl;
+  const pipDiff   = won ? atr*3.0/0.0001 : -atr*1.5/0.0001;
+  const pnl       = +(pipDiff * 10 * lots * (dir==='SELL' ? 1 : 1)).toFixed(2);
+  const absPnl    = Math.abs(pnl) * (won ? 1 : -1);
+
+  tradeCounter++;
+  const trade = {
+    id: tradeCounter,
+    symbol: sym,
+    direction: dir,
+    entry, exit: exitPrice, sl, tp,
+    lots, pips: +(pipDiff*(won?1:-1)).toFixed(1),
+    pnl: absPnl,
+    outcome: won ? 'WIN' : 'LOSS',
+    reason: won ? 'TP' : 'SL',
+  };
+
+  // Update state
+  state.dailyTrades++;
+  state.dailyPnl += absPnl;
+  state.totalPnl += absPnl;
+  state.balance  += absPnl;
+  state.equity    = state.balance;
+  state.peakEquity = Math.max(state.peakEquity, state.equity);
+  state.maxDD = Math.max(state.maxDD, state.peakEquity - state.equity);
+  state.equityCurve.push(state.balance);
+  if (state.equityCurve.length > 60) state.equityCurve.shift();
+
+  if (won) { state.wins++; state.grossProfit += absPnl; }
+  else     { state.losses++; state.grossLoss  += Math.abs(absPnl); }
+
+  state.trades.unshift(trade);
+  if (state.trades.length > 50) state.trades.pop();
+
+  // Check halts
+  const dailyLossPct = (state.dailyPnl / START_BALANCE) * 100;
+  const ddPct = ((state.peakEquity - state.equity) / state.peakEquity) * 100;
+  if (dailyLossPct <= -5) {
+    state.halted = true; state.haltReason = `Daily loss limit hit (${dailyLossPct.toFixed(1)}%)`;
+  }
+  if (ddPct >= 15) {
+    state.halted = true; state.haltReason = `Max drawdown hit (${ddPct.toFixed(1)}%)`;
+  }
+
+  renderAll();
+}
+
+// ── Render ────────────────────────────────────────────────────────────────
+function fmt(n) {
+  const s = Math.abs(n).toFixed(2);
+  return (n >= 0 ? '+$' : '-$') + parseFloat(s).toLocaleString('en-US', {minimumFractionDigits:2});
+}
+
+function renderAll() {
+  // Balance
+  document.getElementById('balanceVal').textContent = '$' + state.balance.toLocaleString('en-US', {minimumFractionDigits:2});
+
+  // Daily PnL
+  const dpEl = document.getElementById('dailyPnl');
+  dpEl.textContent = fmt(state.dailyPnl);
+  dpEl.className = 'card-value ' + (state.dailyPnl >= 0 ? 'green' : 'red');
+  document.getElementById('pnlSub').textContent = `${state.dailyTrades} trade${state.dailyTrades!==1?'s':''} today`;
+
+  // Win rate
+  const total = state.wins + state.losses;
+  const wr = total > 0 ? ((state.wins/total)*100).toFixed(1)+'%' : '—';
+  document.getElementById('winRateVal').textContent = wr;
+  document.getElementById('winRateSub').textContent = `${state.wins}W / ${state.losses}L`;
+
+  // Total P&L
+  const tEl = document.getElementById('totalPnl');
+  tEl.textContent = fmt(state.totalPnl);
+  tEl.className = 'card-value ' + (state.totalPnl >= 0 ? 'green' : 'red');
+  document.getElementById('totalSub').textContent = `${total} total trades`;
+
+  // Profit factor
+  const pf = state.grossLoss > 0 ? (state.grossProfit/state.grossLoss).toFixed(2) : '∞';
+  document.getElementById('pfVal').textContent = pf;
+
+  // Drawdown
+  document.getElementById('ddVal').textContent = '$' + state.maxDD.toFixed(2);
+
+  // Gauges
+  const dailyLossPct = Math.max(0, -(state.dailyPnl / START_BALANCE) * 100);
+  const ddPct = ((state.peakEquity - state.equity) / state.peakEquity) * 100;
+
+  setGauge('g1', dailyLossPct, 5, `${dailyLossPct.toFixed(1)}%`);
+  setGauge('g2', Math.max(0, ddPct), 15, `${Math.max(0,ddPct).toFixed(1)}%`);
+  setGauge('g3', state.dailyTrades, 5, `${state.dailyTrades} / 5`, true);
+
+  // Alert
+  const alertEl = document.getElementById('alertBanner');
+  if (state.killed) {
+    alertEl.classList.add('show');
+    document.getElementById('alertMsg').textContent = '⬛ KILL SWITCH ACTIVE — All trading halted. Click "RESUME" to restart.';
+  } else if (state.halted) {
+    alertEl.classList.add('show');
+    document.getElementById('alertMsg').textContent = '🛑 TRADING HALTED — ' + state.haltReason;
+  } else {
+    alertEl.classList.remove('show');
+  }
+
+  // Status dot
+  const dot = document.getElementById('statusDot');
+  const txt = document.getElementById('statusText');
+  if (state.killed || state.halted) {
+    dot.className = 'dot halted';
+    txt.textContent = state.killed ? 'KILLED' : 'HALTED';
+    txt.style.color = 'var(--loss)';
+  } else {
+    dot.className = 'dot';
+    txt.textContent = 'ACTIVE';
+    txt.style.color = 'var(--accent)';
+  }
+
+  // Trade table
+  renderTable();
+
+  // Chart
+  drawEquityChart();
+
+  // Signals (random demo)
+  renderSignals();
+}
+
+function setGauge(id, val, max, label, isCount=false) {
+  const pct = Math.min(100, (val/max)*100);
+  const fill = document.getElementById(id+'Fill');
+  const valEl = document.getElementById(id+'Val');
+  fill.style.width = pct + '%';
+  valEl.textContent = label;
+  if (pct > 80)      { fill.className = 'gauge-fill danger'; }
+  else if (pct > 50) { fill.className = 'gauge-fill warn'; }
+  else               { fill.className = 'gauge-fill safe'; }
+}
+
+function renderTable() {
+  const tbody = document.getElementById('tradeTableBody');
+  if (state.trades.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="12" style="color:var(--muted);text-align:center;padding:20px;">No trades yet</td></tr>';
+    return;
+  }
+  tbody.innerHTML = state.trades.slice(0, 15).map(t => `
+    <tr>
+      <td style="color:var(--muted)">#${t.id}</td>
+      <td style="color:#fff;font-weight:700">${t.symbol}</td>
+      <td><span class="badge ${t.direction.toLowerCase()}">${t.direction}</span></td>
+      <td>${t.entry.toFixed(5)}</td>
+      <td>${t.exit.toFixed(5)}</td>
+      <td style="color:var(--loss)">${t.sl.toFixed(5)}</td>
+      <td style="color:var(--win)">${t.tp.toFixed(5)}</td>
+      <td>${t.lots}</td>
+      <td class="${t.pips >= 0 ? 'pnl-pos' : 'pnl-neg'}">${t.pips > 0 ? '+' : ''}${t.pips}</td>
+      <td class="${t.pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${fmt(t.pnl)}</td>
+      <td><span class="badge ${t.outcome.toLowerCase()}">${t.outcome}</span></td>
+      <td><span class="badge ${t.reason.toLowerCase()}">${t.reason}</span></td>
+    </tr>
+  `).join('');
+}
+
+function drawEquityChart() {
+  const canvas = document.getElementById('equityCanvas');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.offsetWidth; const H = canvas.offsetHeight;
+  canvas.width = W * devicePixelRatio; canvas.height = H * devicePixelRatio;
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+
+  const pts = state.equityCurve;
+  if (pts.length < 2) return;
+
+  const min = Math.min(...pts) * 0.999;
+  const max = Math.max(...pts) * 1.001;
+  const range = max - min || 1;
+
+  const px = (i) => (i / (pts.length-1)) * W;
+  const py = (v) => H - ((v - min) / range) * H * 0.85 - H*0.075;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Fill
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, 'rgba(0,229,160,0.15)');
+  grad.addColorStop(1, 'rgba(0,229,160,0)');
+  ctx.beginPath();
+  ctx.moveTo(px(0), py(pts[0]));
+  for (let i=1; i<pts.length; i++) ctx.lineTo(px(i), py(pts[i]));
+  ctx.lineTo(px(pts.length-1), H);
+  ctx.lineTo(px(0), H);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  ctx.moveTo(px(0), py(pts[0]));
+  for (let i=1; i<pts.length; i++) ctx.lineTo(px(i), py(pts[i]));
+  ctx.strokeStyle = 'rgba(0,229,160,0.9)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Baseline
+  const base = py(START_BALANCE);
+  ctx.beginPath();
+  ctx.setLineDash([4,4]);
+  ctx.moveTo(0, base); ctx.lineTo(W, base);
+  ctx.strokeStyle = 'rgba(74,96,112,0.5)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+// Signals demo
+const sigData = [
+  { sym:'EUR/USD', dir:'BUY',  entry:'1.08451', sl:'1.08270', tp:'1.08813', rr:'2.0', active:true  },
+  { sym:'GBP/USD', dir:'SELL', entry:'1.26890', sl:'1.27110', tp:'1.26450', rr:'2.0', active:false },
+  { sym:'USD/JPY', dir:'NONE', entry:'—',       sl:'—',       tp:'—',       rr:'—',   active:false },
+];
+
+function renderSignals() {
+  const el = document.getElementById('signalList');
+  el.innerHTML = sigData.map(s => `
+    <div class="signal-item ${s.active ? 'active' : ''}">
+      <div>
+        <div class="sig-pair">${s.sym}</div>
+        <div class="sig-info">${s.active ? 'Monitoring' : 'No confluence'}</div>
+      </div>
+      <div style="text-align:center">
+        <span class="sig-dir ${s.dir.toLowerCase()}" style="font-family:var(--mono);font-size:13px;font-weight:700">${s.dir}</span>
+      </div>
+      <div class="sig-stats">
+        <span style="color:var(--muted);font-size:10px">Entry ${s.entry}</span>
+        <span style="color:var(--loss);font-size:10px">SL ${s.sl}</span>
+        <span style="color:var(--win);font-size:10px">TP ${s.tp}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+// Kill switch
+function toggleKill() {
+  const btn = document.getElementById('killBtn');
+  if (!state.killed) {
+    state.killed = true;
+    btn.textContent = '▶ RESUME';
+    btn.classList.add('active');
+  } else {
+    state.killed = false;
+    state.halted = false;
+    state.haltReason = '';
+    state.dailyPnl = 0;
+    state.dailyTrades = 0;
+    btn.textContent = '⬛ KILL SWITCH';
+    btn.classList.remove('active');
+  }
+  renderAll();
+}
+
+// ── Simulation loop ────────────────────────────────────────────────────────
+renderAll();
+setInterval(simulateTrade, 2800);
+setInterval(() => {
+  if (!state.killed && !state.halted) drawEquityChart();
+}, 500);
+</script>
+</body>
+</html>
